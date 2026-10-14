@@ -35,10 +35,13 @@ li::before{content:"";position:absolute;left:11px;top:24px;bottom:-2px;width:2px
 li i{position:absolute;left:0;top:1px;width:24px;height:24px;border-radius:50%;border:2px solid var(--line);background:var(--bg);display:grid;place-items:center;font-style:normal;font-size:12px;font-weight:800}
 li.done{color:var(--tx)}li.done i{background:var(--acc);border-color:var(--acc);color:#fff}li.done::before{background:var(--acc)}
 li.cur{color:var(--tx);font-weight:800}li.cur i{border-color:var(--acc2);color:var(--acc2);box-shadow:0 0 0 4px rgba(124,77,232,.25)}
-@keyframes rebond{0%,100%{transform:translateY(0)}25%{transform:translateY(-9px)}45%{transform:translateY(0)}60%{transform:translateY(-4px)}75%{transform:translateY(0)}}
-li.fin i{background:none;border:0;box-shadow:none;color:var(--ok);font-size:26px;font-weight:900;line-height:1}
-li.cur i{animation:rebond 1.8s ease-in-out infinite}
-@media (prefers-reduced-motion:reduce){li.cur i{animation:none}}
+@keyframes goutte{0%{transform:scale(1);opacity:.55}100%{transform:scale(1.5);opacity:0}}
+@keyframes trace{to{stroke-dashoffset:0}}
+li.cur:not(.fin) i::after{content:"";position:absolute;inset:-2px;border-radius:50%;border:2px solid var(--acc2);animation:goutte 2.2s ease-out infinite;pointer-events:none}
+li.fin i{background:none;border:0;box-shadow:none;color:var(--ok)}
+li.fin i svg{display:block;width:24px;height:24px}
+li.fin i svg path{stroke-dasharray:26;stroke-dashoffset:26;animation:trace .6s ease-out .1s forwards}
+@media (prefers-reduced-motion:reduce){li.cur:not(.fin) i::after{animation:none;display:none}li.fin i svg path{animation:none;stroke-dashoffset:0}}
 .pc{margin-top:16px}.pc h3{margin:0 0 10px;font-size:16px}.pc dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:14px}.pc dt{color:var(--mut)}.pc dd{margin:0;font-weight:600}
 .cd{margin-top:14px;padding:12px 14px;border-radius:10px;background:#2a2438;border:1px solid var(--line)}.cd b{color:var(--acc2)}.bar{height:6px;border-radius:99px;background:var(--line);margin-top:8px;overflow:hidden}.bar span{display:block;height:100%;background:var(--acc)}
 .demo{margin:0 0 14px;padding:8px 12px;border-radius:8px;background:#2a2438;color:var(--acc2);font-size:13px}
@@ -76,6 +79,7 @@ const STEPS=[
  ["Tests","Ton PC passe ses tests de stabilité et de températures."],
  ["Prêt à récupérer","Ton PC est prêt ! Nous te contactons pour la remise."],
  ["Livré","Ton PC t'a été remis. Bon jeu !"]];
+const CHECK='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.8l5 5L19.5 7" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const KEYS={nouveau:0,"devis envoye":1,accepte:2,"pieces commandees":3,"en montage":4,"tests en cours":5,pret:6,livre:7};
 const $=s=>document.querySelector(s);
 const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase();
@@ -100,7 +104,8 @@ async function loadPC(){
  const r=await fetch(MONPC_URL+(MONPC_URL.includes("?")?"&":"?")+"t="+Date.now());if(!r.ok)return[];
  const rows=csv(await r.text()),hd=rows.shift(),h=hd.map(norm);
  const ci=h.findIndex(x=>x.startsWith("n")&&x.includes("commande")),mi=h.findIndex(x=>x.includes("montage")),ri=h.findIndex(x=>x.includes("remise"));
- return rows.map(r=>({n:(r[ci]||"").trim().toUpperCase(),mont:pd(r[mi]),rem:pd(r[ri]),items:hd.map((l,i)=>[i,l.trim(),(r[i]||"").trim()]).filter(x=>x[2]&&![ci,mi,ri].includes(x[0])).map(x=>[x[1],x[2]])}));
+ const si=h.findIndex(x=>x==="statut");
+ return rows.map(r=>({n:(r[ci]||"").trim().toUpperCase(),mont:pd(r[mi]),rem:pd(r[ri]),items:hd.map((l,i)=>[i,l.trim(),(r[i]||"").trim()]).filter(x=>x[2]&&![ci,mi,ri,si].includes(x[0])).map(x=>[x[1],x[2]])}));
 }
 function countdown(t){
  const now=new Date();now.setHours(0,0,0,0);if(t<=now)return null;
@@ -134,10 +139,10 @@ async function find(){
  const k=norm(o.s);
  if(k==="refuse"){show(0,'<div class="card"><div class="head"><span class="num">'+esc(id)+'</span></div><p class="now">Demande clôturée</p><p class="desc">Cette demande n\'a pas abouti. Contacte GGBUILD si tu souhaites la rouvrir.</p></div>');return}
  const cur=k in KEYS?KEYS[k]:0;
- let extra="";try{const p=(await loadPC()).find(x=>x.n===id);if(p&&p.rem)extra=pcHtml(p)}catch(e){}
+ let extra="";try{const p=(await loadPC()).find(x=>x.n===id);if(p&&(p.rem||(cur>=7&&p.items.length)))extra=pcHtml(p)}catch(e){}
  show(0,'<div class="card"><div class="head"><span class="num">'+esc(id)+'</span>'+(o.d?'<span class="since">Reçue le '+esc(o.d)+'</span>':'')+'</div>'+
   '<p class="now">'+STEPS[cur][0]+'</p><p class="desc">'+STEPS[cur][1]+'</p><ol>'+
-  STEPS.map((s,i)=>`<li class="${i<cur?"done":i===cur?"cur"+(cur>=6?" fin":""):""}"><i>${i<cur||(i===cur&&cur>=6)?"✓":i+1}</i>${s[0]}</li>`).join("")+'</ol></div>'+extra);
+  STEPS.map((s,i)=>`<li class="${i<cur?"done":i===cur?"cur"+(cur>=6?" fin":""):""}"><i>${i===cur&&cur>=6?CHECK:i<cur?"✓":i+1}</i>${s[0]}</li>`).join("")+'</ol></div>'+extra);
 }
 $("#go").onclick=find;$("#n").addEventListener("keydown",e=>{if(e.key==="Enter")find()});
 $("#lg").src=LOGO;$("#contact").textContent=CONTACT;$("#demo").hidden=!!CSV_URL;
